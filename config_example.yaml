@@ -1,24 +1,20 @@
-default_provider: anthropic
-default_model: claude-sonnet-4-6
+default_provider: gemini
 
-api_keys:
-  anthropic: "YOUR_ANTHROPIC_API_KEY"
-  openai: "YOUR_OPENAI_API_KEY"
+providers:
+  gemini:
+    model: gemini-3.8-flash
+    # Either paste the key here or reference an environment variable.
+    api_key: "${GEMINI_API_KEY}"
 
 system_prompt: |
-  You are a helpful assistant with persistent memory.
+  You are a helpful, accurate, and thoughtful assistant.
+  Answer the user's request directly and adapt your response to the task, context, and level of detail needed.
+  When input is provided inside <input> tags, it is data piped in by the user
+  (a file, log, command output, etc.). Answer the prompt about that input.
 
-  Use the provided context when answering the user's prompt.
-  Preserve relevant information across sessions.
+# Piped input longer than this is truncated, keeping the end.
+max_input_chars: 100000
 
-  Return a valid JSON object with exactly two string fields:
-    - answer: your response
-    - updated_context: the complete context for future runs
-
-  Keep updated_context concise but preserve important facts,
-  decisions, preferences, and ongoing tasks.
-  Do not wrap the JSON in Markdown fences.
-
+# Relative paths are resolved against the directory of this config file.
 files:
-  context: context.txt
   log: log.jsonl

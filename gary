@@ -1,0 +1,5 @@
+#!/bin/sh
+# Launcher: runs main.py with the project's virtualenv from any directory.
+# Install with: ln -s "$PWD/gary" ~/.local/bin/gary
+DIR="$(dirname "$(readlink -f "$0")")"
+exec "$DIR/.venv/bin/python" "$DIR/main.py" "$@"
