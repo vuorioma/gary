@@ -169,8 +169,18 @@ def main():
     request_parts.append(f"Current prompt:\n<prompt>\n{prompt}\n</prompt>")
     request = "\n\n".join(request_parts)
 
-    # Only log once generation succeeds.
-    answer = provider.generate(config["system_prompt"], request)
+    # Stream to a terminal; print the whole answer at once when piped.
+    # Only log once generation succeeds, so Ctrl-C drops the answer.
+    if sys.stdout.isatty():
+        pieces = []
+        for piece in provider.stream(config["system_prompt"], request):
+            print(piece, end="", flush=True)
+            pieces.append(piece)
+        print()
+        answer = "".join(pieces)
+    else:
+        answer = provider.generate(config["system_prompt"], request)
+        print(answer)
 
     timestamp = datetime.now().astimezone().isoformat(
         timespec="seconds"
@@ -189,13 +199,14 @@ def main():
     with log_file.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    print(answer)
-
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
+        # End a partially streamed line before exiting.
+        if sys.stdout.isatty():
+            print()
         sys.exit(130)
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
