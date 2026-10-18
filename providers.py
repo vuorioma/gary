@@ -31,6 +31,9 @@ class LLMProvider(ABC):
             data=body,
             headers={
                 "Content-Type": "application/json",
+                # Some APIs (e.g. Groq, via Cloudflare) reject urllib's
+                # default User-Agent with HTTP 403.
+                "User-Agent": "gary/1.0",
                 **headers,
             },
             method="POST",
@@ -72,8 +75,13 @@ class LLMProvider(ABC):
                 if not line.startswith("data:"):
                     continue
 
+                data = line[len("data:"):].strip()
+                # OpenAI-style streams end with a sentinel instead of JSON.
+                if data == "[DONE]":
+                    break
+
                 try:
-                    yield json.loads(line[len("data:"):])
+                    yield json.loads(data)
                 except json.JSONDecodeError:
                     raise RuntimeError(
                         "API returned invalid JSON."
@@ -157,8 +165,77 @@ class GeminiProvider(LLMProvider):
                 yield text
 
 
+class OpenAIProvider(LLMProvider):
+    NAME = "OpenAI"
+    API_URL = "https://api.openai.com/v1/chat/completions"
+
+    def __init__(self, model: str, api_key: str):
+        self.model = model
+        self.api_key = api_key
+
+    def headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def payload(self, system: str, prompt: str, stream: bool) -> dict:
+        return {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "max_completion_tokens": 4096,
+            "stream": stream,
+        }
+
+    @classmethod
+    def choice(cls, response: dict) -> dict:
+        if "error" in response:
+            raise RuntimeError(
+                f"{cls.NAME} returned an error: {response['error']}"
+            )
+
+        choices = response.get("choices", [])
+        if not choices:
+            raise RuntimeError(f"{cls.NAME} returned no choices: {response}")
+
+        return choices[0]
+
+    def generate(self, system: str, prompt: str) -> str:
+        response = self.post_json(
+            self.API_URL,
+            headers=self.headers(),
+            payload=self.payload(system, prompt, stream=False),
+        )
+
+        content = self.choice(response).get("message", {}).get("content")
+        return content if isinstance(content, str) else ""
+
+    def stream(self, system: str, prompt: str) -> Iterator[str]:
+        for chunk in self.post_sse(
+            self.API_URL,
+            headers=self.headers(),
+            payload=self.payload(system, prompt, stream=True),
+        ):
+            # Usage-only chunks have no choices.
+            if not chunk.get("choices") and "error" not in chunk:
+                continue
+
+            content = self.choice(chunk).get("delta", {}).get("content")
+            if isinstance(content, str) and content:
+                yield content
+
+
+class GroqProvider(OpenAIProvider):
+    """Groq serves an OpenAI-compatible Chat Completions API."""
+
+    NAME = "Groq"
+    API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+
 PROVIDERS = {
     "gemini": GeminiProvider,
+    "openai": OpenAIProvider,
+    "groq": GroqProvider,
 }
 
 

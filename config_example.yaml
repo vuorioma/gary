@@ -6,6 +6,14 @@ providers:
     # Either paste the key here or reference an environment variable.
     api_key: "${GEMINI_API_KEY}"
 
+  openai:
+    model: gpt-5-mini
+    api_key: "${OPENAI_API_KEY}"
+
+  groq:
+    model: openai/gpt-oss-120b
+    api_key: "${GROQ_API_KEY}"
+
 system_prompt: |
   You are a helpful, accurate, and thoughtful assistant.
   Answer the user's request directly and adapt your response to the task, context, and level of detail needed.
