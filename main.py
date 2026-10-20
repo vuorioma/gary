@@ -19,6 +19,14 @@ CONFIG_SEARCH_PATHS = (
 )
 
 DEFAULT_MAX_INPUT_CHARS = 100_000
+DEFAULT_PERSONA = "generic"
+
+# Appended to every persona: main() wraps piped input in these tags.
+INPUT_INSTRUCTIONS = (
+    "When input is provided inside <input> tags, it is data piped in by "
+    "the user (a file, log, command output, etc.). Answer the prompt "
+    "inside <prompt> tags about that input."
+)
 
 
 def find_config() -> Path:
@@ -40,7 +48,7 @@ def load_config(path: Path) -> dict:
     if not isinstance(config, dict):
         raise ValueError("Configuration must be a YAML mapping.")
 
-    for key in ("default_provider", "providers", "system_prompt", "files"):
+    for key in ("default_provider", "providers", "files"):
         if key not in config:
             raise ValueError(f"Missing config setting: {key}")
 
@@ -83,6 +91,24 @@ def resolve_path(value: str, config_path: Path) -> Path:
     return path
 
 
+def load_persona(name: str, personas_dir: Path) -> str:
+    """Read the system prompt for a persona from <personas_dir>/<name>.txt."""
+    path = personas_dir / f"{name}.txt"
+
+    if not path.is_file():
+        available = sorted(p.stem for p in personas_dir.glob("*.txt"))
+        raise ValueError(
+            f"Persona '{name}' not found in {personas_dir}. "
+            f"Available: {', '.join(available) or 'none'}"
+        )
+
+    system_prompt = path.read_text(encoding="utf-8").strip()
+    if not system_prompt:
+        raise ValueError(f"Persona file is empty: {path}")
+
+    return f"{system_prompt}\n\n{INPUT_INSTRUCTIONS}"
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="gary",
@@ -92,6 +118,9 @@ def main():
     parser.add_argument("--config", type=Path, help="Path to config.yaml")
     parser.add_argument("--provider", help="Override default provider")
     parser.add_argument("--model", help="Override configured provider model")
+    parser.add_argument(
+        "--persona", help="System prompt to use, from the personas folder"
+    )
     args = parser.parse_args()
 
     config_path = (args.config or find_config()).expanduser().resolve()
@@ -119,6 +148,16 @@ def main():
         )
 
     log_file = resolve_path(config["files"].get("log", "log.jsonl"), config_path)
+
+    # Without a configured path, personas live next to main.py.
+    personas_setting = config["files"].get("personas")
+    personas_dir = (
+        resolve_path(personas_setting, config_path)
+        if personas_setting
+        else BASE_DIR / "personas"
+    )
+    persona = args.persona or config.get("default_persona", DEFAULT_PERSONA)
+    system_prompt = load_persona(persona, personas_dir)
 
     prompt = " ".join(args.prompt).strip()
 
@@ -166,20 +205,23 @@ def main():
     request_parts = []
     if piped:
         request_parts.append(f"Input:\n<input>\n{piped}\n</input>")
-    request_parts.append(f"Current prompt:\n<prompt>\n{prompt}\n</prompt>")
+        request_parts.append(f"Current prompt:\n<prompt>\n{prompt}\n</prompt>")
+    else:
+        request_parts.append(prompt)
+
     request = "\n\n".join(request_parts)
 
     # Stream to a terminal; print the whole answer at once when piped.
     # Only log once generation succeeds, so Ctrl-C drops the answer.
     if sys.stdout.isatty():
         pieces = []
-        for piece in provider.stream(config["system_prompt"], request):
+        for piece in provider.stream(system_prompt, request):
             print(piece, end="", flush=True)
             pieces.append(piece)
         print()
         answer = "".join(pieces)
     else:
-        answer = provider.generate(config["system_prompt"], request)
+        answer = provider.generate(system_prompt, request)
         print(answer)
 
     timestamp = datetime.now().astimezone().isoformat(
@@ -190,6 +232,7 @@ def main():
         "timestamp": timestamp,
         "provider": provider_name,
         "model": model,
+        "persona": persona,
         "prompt": prompt,
         "input_chars": len(piped),
         "answer": answer

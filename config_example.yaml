@@ -14,11 +14,8 @@ providers:
     model: openai/gpt-oss-120b
     api_key: "${GROQ_API_KEY}"
 
-system_prompt: |
-  You are a helpful, accurate, and thoughtful assistant.
-  Answer the user's request directly and adapt your response to the task, context, and level of detail needed.
-  When input is provided inside <input> tags, it is data piped in by the user
-  (a file, log, command output, etc.). Answer the prompt about that input.
+# System prompt to use, from personas/<name>.txt. Override with --persona.
+default_persona: generic
 
 # Piped input longer than this is truncated, keeping the end.
 max_input_chars: 100000
@@ -26,3 +23,5 @@ max_input_chars: 100000
 # Relative paths are resolved against the directory of this config file.
 files:
   log: log.jsonl
+  # Defaults to the personas folder next to main.py.
+  # personas: personas
